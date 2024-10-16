@@ -9,6 +9,7 @@
 #include <random>
 #include <iostream>
 #include <sstream>
+#include "UAV.h"
 
 // Улучшенные реализации для GPS и INS
 class GPS {
@@ -484,17 +485,79 @@ public:
 };
 
 int main() {
-    GPS gps;
-    INS ins;
-    Barometer barometer;
-
-    AdaptiveIntegrationSystem ais(&gps, &ins, &barometer);
-
-    // Симуляция работы системы в течение 60 секунд
-    for (int i = 0; i < 200; ++i) {
-        ais.update();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+   try {
+        // Инициализация датчиков
+        GPS gps;
+        INS ins;
+        Barometer barometer;
+        
+        // Создание системы интеграции
+        AdaptiveIntegrationSystem ais(&gps, &ins, &barometer);
+        
+        // Создание визуализации
+        UAV visualization("Визуализация полета БПЛА");
+        
+        // Загрузка маршрута полета
+        visualization.loadFlightPath("terrain.txt");
+        
+        // Файл для записи телеметрии
+        std::ofstream telemetry_file("telemetry.csv");
+        telemetry_file << "Time,X,Y,Z,Vx,Vy,Vz,Ax,Ay,Az" << std::endl;
+        
+        // Время начала симуляции
+        auto start_time = std::chrono::steady_clock::now();
+        
+        // Основной цикл симуляции
+        while (visualization.isRunning()) {
+            // Обработка событий SFML
+            visualization.handleEvents();
+            
+            // Обновление состояния системы
+            ais.update();
+            
+            // Получение текущего состояния
+            Eigen::Vector3d position = ais.get_position();
+            Eigen::Vector3d velocity = ais.get_velocity();
+            Eigen::Vector3d acceleration = ais.get_acceleration();
+            
+            // Обновление визуализации
+            visualization.update(position, velocity, position[2]);
+            
+            // Отрисовка
+            visualization.render();
+            
+            // Запись телеметрии
+            auto current_time = std::chrono::steady_clock::now();
+            double elapsed_seconds = std::chrono::duration<double>(
+                current_time - start_time).count();
+            
+            telemetry_file << std::fixed << std::setprecision(3)
+                          << elapsed_seconds << ","
+                          << position.x() << ","
+                          << position.y() << ","
+                          << position.z() << ","
+                          << velocity.x() << ","
+                          << velocity.y() << ","
+                          << velocity.z() << ","
+                          << acceleration.x() << ","
+                          << acceleration.y() << ","
+                          << acceleration.z() << std::endl;
+            
+            // Задержка для стабильной частоты обновления
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // Закрытие файла телеметрии
+        telemetry_file.close();
+        
+        return 0;
     }
-
-    return 0;
+    catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    catch (...) {
+        std::cerr << "Unknown error occurred" << std::endl;
+        return 1;
+    }
 }
